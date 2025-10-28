@@ -74,7 +74,8 @@ class ProcedureExecutor:
         """Ejecuta la lógica real del procedimiento"""
         
         # Operaciones aritméticas comunes
-        if name in ['suma', 'sumar', 'add']:
+        # Incluir alias en inglés corto 'sum' además de 'add' para compatibilidad
+        if name in ['suma', 'sumar', 'add', 'sum']:
             return sum([self._cast_value(v, 'int') for v in params.values()])
         
         elif name in ['resta', 'restar', 'subtract']:

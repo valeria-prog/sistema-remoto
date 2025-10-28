@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Code, Plus, Trash2, Edit2, Eye, FileCode, Settings, ChevronLeft, ChevronRight, Server } from 'lucide-react';
+import { Code, Plus, Trash2, Edit2, Eye, FileCode, Settings, ChevronLeft, ChevronRight, Server, Download } from 'lucide-react';
 
 export default function Phase2Editor({ selectedProtocol, selectedTransport, procedures, setProcedures, onBack, onNext }) {
   const [currentProcedure, setCurrentProcedure] = useState({
@@ -181,6 +181,23 @@ export default function Phase2Editor({ selectedProtocol, selectedTransport, proc
     code += `  }\n}\n`;
     return code;
   };
+
+  const downloadGeneratedCode = async () => {
+  try {
+    const response = await fetch(`http://localhost:8080/api/download/code?protocol=${selectedProtocol}`);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedProtocol}_generated_code.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Error descargando código:', error);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -384,10 +401,19 @@ export default function Phase2Editor({ selectedProtocol, selectedTransport, proc
             {/* Code Preview */}
             {showPreview && procedures.length > 0 && (
               <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-pink-500/20 p-6 shadow-2xl animate-in fade-in duration-300">
-                <h2 className="text-xl font-semibold text-pink-300 mb-4 flex items-center gap-2">
-                  <FileCode className="w-5 h-5" />
-                  Código Generado - {protocols[selectedProtocol]}
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-pink-300 flex items-center gap-2">
+                    <FileCode className="w-5 h-5" />
+                    Código Generado - {protocols[selectedProtocol]}
+                  </h2>
+                  <button
+                    onClick={downloadGeneratedCode}
+                    className="px-4 py-2 bg-gradient-to-r from-pink-500 to-fuchsia-600 rounded-lg text-white font-medium hover:scale-105 transition-all duration-300 flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descargar Código
+                  </button>
+                </div>
                 <pre className="bg-slate-900/50 p-4 rounded-lg overflow-x-auto border border-pink-500/10">
                   <code className="text-pink-200 text-sm">{generateCode()}</code>
                 </pre>
