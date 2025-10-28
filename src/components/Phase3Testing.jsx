@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import io from 'socket.io-client';
 import { 
   ChevronLeft, 
   Play, 
@@ -21,12 +22,36 @@ export default function Phase3Testing({ selectedProtocol, selectedTransport, pro
   const [paramValues, setParamValues] = useState({});
   const [logs, setLogs] = useState([]);
   const [statistics, setStatistics] = useState({ calls: 0, success: 0, failed: 0, avgLatency: 0 });
+  const [socket, setSocket] = useState(null);
 
   const protocols = {
     grpc: 'gRPC',
     rmi: 'RMI',
     netremoting: '.NET Remoting'
   };
+
+  // Conectar WebSocket cuando el componente se monta
+  useEffect(() => {
+    const newSocket = io('http://localhost:8080');
+    
+    newSocket.on('connect', () => {
+      console.log('WebSocket conectado');
+    });
+
+    newSocket.on('log', (logData) => {
+      addLog(logData.type, logData.message);
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('WebSocket desconectado');
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.close();
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedProcedure) {
@@ -58,78 +83,92 @@ export default function Phase3Testing({ selectedProtocol, selectedTransport, pro
     setLogs(prev => [...prev, { type, message, timestamp }]);
   };
 
-  const connectServer = () => {
+  const connectServer = async () => {
     setConnectionStatus('connecting');
     addLog('info', `Intentando conectar a ${serverConfig.host}:${serverConfig.port}`);
     
-    setTimeout(() => {
-      setConnectionStatus('connected');
-      addLog('success', `✓ Conexión establecida via ${selectedTransport.toUpperCase()}`);
-      addLog('info', `Protocolo: ${protocols[selectedProtocol]}`);
-    }, 1500);
+    try {
+      // Registrar procedimientos en el backend
+      await fetch('http://localhost:8080/api/procedures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          protocol: selectedProtocol,
+          transport: selectedTransport,
+          procedures: procedures
+        })
+      });
+
+      // Conectar
+      const response = await fetch('http://localhost:8080/api/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serverConfig)
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setConnectionStatus('connected');
+        addLog('success', `✓ Conexión establecida via ${selectedTransport.toUpperCase()}`);
+        addLog('info', `Protocolo: ${protocols[selectedProtocol]}`);
+      }
+    } catch (error) {
+      setConnectionStatus('disconnected');
+      addLog('error', `✗ Error: ${error.message}`);
+    }
   };
+
 
   const disconnectServer = () => {
     setConnectionStatus('disconnected');
     addLog('warning', 'Conexión cerrada');
   };
 
-  const executeProcedure = () => {
+  const executeProcedure = async () => {
     if (connectionStatus !== 'connected' || selectedProcedure === null) return;
 
     const procedure = procedures[selectedProcedure];
     const startTime = Date.now();
 
-    addLog('info', `→ Ejecutando: ${procedure.name}()`);
-    addLog('info', `Serializando parámetros...`);
+    try {
+      const response = await fetch('http://localhost:8080/api/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          procedureName: procedure.name,
+          parameters: paramValues
+        })
+      });
 
-    // Simular serialización
-    setTimeout(() => {
-      const serializedParams = Object.entries(paramValues)
-        .map(([key, value]) => `${key}=${value}`)
-        .join(', ');
-      addLog('success', `✓ Serialización completa: {${serializedParams}}`);
-      
-      addLog('info', `Transmitiendo via ${selectedTransport.toUpperCase()}...`);
-      
-      // Simular transmisión
-      setTimeout(() => {
-        addLog('success', `✓ Paquete enviado a ${serverConfig.host}:${serverConfig.port}`);
-        addLog('info', `Esperando respuesta del servidor...`);
-        
-        // Simular respuesta
-        setTimeout(() => {
-          const latency = Date.now() - startTime;
-          const isSuccess = Math.random() > 0.1; // 90% success rate
-          
-          if (isSuccess) {
-            const mockResult = generateMockResult(procedure.returnType);
-            addLog('success', `✓ Respuesta recibida: ${mockResult}`);
-            addLog('success', `✓ Deserialización completa`);
-            addLog('success', `⚡ Latencia: ${latency}ms`);
-            
-            setStatistics(prev => ({
-              calls: prev.calls + 1,
-              success: prev.success + 1,
-              failed: prev.failed,
-              avgLatency: Math.round((prev.avgLatency * prev.calls + latency) / (prev.calls + 1))
-            }));
-          } else {
-            addLog('error', `✗ Error: Timeout en la conexión`);
-            addLog('error', `✗ La llamada falló después de ${latency}ms`);
-            
-            setStatistics(prev => ({
-              calls: prev.calls + 1,
-              success: prev.success,
-              failed: prev.failed + 1,
-              avgLatency: Math.round((prev.avgLatency * prev.calls + latency) / (prev.calls + 1))
-            }));
-          }
-          
-          addLog('info', '---');
-        }, 800);
-      }, 600);
-    }, 400);
+      const data = await response.json();
+      const latency = Date.now() - startTime;
+
+      // Actualizar estadísticas
+      if (data.success) {
+        setStatistics(prev => ({
+          calls: prev.calls + 1,
+          success: prev.success + 1,
+          failed: prev.failed,
+          avgLatency: Math.round((prev.avgLatency * prev.calls + latency) / (prev.calls + 1))
+        }));
+      } else {
+        setStatistics(prev => ({
+          calls: prev.calls + 1,
+          success: prev.success,
+          failed: prev.failed + 1,
+          avgLatency: Math.round((prev.avgLatency * prev.calls + latency) / (prev.calls + 1))
+        }));
+      }
+
+    } catch (error) {
+      addLog('error', `✗ Error de conexión: ${error.message}`);
+      setStatistics(prev => ({
+        ...prev,
+        calls: prev.calls + 1,
+        failed: prev.failed + 1
+      }));
+    }
   };
 
   const generateMockResult = (returnType) => {
